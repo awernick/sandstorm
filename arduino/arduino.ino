@@ -12,10 +12,16 @@ static const uint32_t RAW_NMAE_INTERVAL = 10000;
 static const uint32_t HEARTBEAT_INTERVAL = 5000;
 static const uint32_t SENSOR_INFO_INTERVAL = 10000;
 
+static const uint32_t RAW_NMAE_STATUS = 0;
+static const uint32_t HEARTBEAT_STATUS = 1;
+static const uint32_t SENSOR_INFO_STATUS = 2;
+
 TinyGPSPlus gps;
 SoftwareSerial softSerial(RXPin, TXPin);
 
-static int time = 0;
+static unsigned long  time = 0;
+static int status = RAW_NMAE_STATUS;
+static int interval = RAW_NMAE_INTERVAL; 
 
 void setup()
 {
@@ -28,27 +34,70 @@ void setup()
 
 void loop()
 {
+  
   time = millis();
   
-  while( (millis() - time)  < RAW_NMAE_INTERVAL)
+  while( (millis() - time)  <  interval )
   {
-    if(softSerial.available())
-      Serial.write(softSerial.read());
-    if(Serial.available())
-      softSerial.write(Serial.read());
+    switch( status )
+    {
+      case RAW_NMAE_STATUS:
+        sendNMAEGPSSentence();
+        break;
+      case HEARTBEAT_STATUS:
+        printHeartBeatSignal();
+        break;
+      case SENSOR_INFO_STATUS:
+        displaySensorInfo();
+        break;
+    }
   }
+  Serial.println();
+  Serial.print("Running Time: ");
+  Serial.println(time);
   
-  time = millis();
+  status++;
   
-  while( (millis() - time) < HEARTBEAT_INTERVAL)
+  if(status > SENSOR_INFO_STATUS)
+    status = RAW_NMAE_STATUS;
+    
+   Serial.print("Status: ");
+   Serial.println(status);
+    
+   switch(status)
+   {
+     case RAW_NMAE_STATUS:
+       interval = RAW_NMAE_INTERVAL;
+       break;
+     case HEARTBEAT_STATUS:
+       interval = HEARTBEAT_INTERVAL;
+       break;
+     case SENSOR_INFO_STATUS:
+       interval = SENSOR_INFO_INTERVAL;
+       break;
+   }
+}
+
+void sendNMAEGPSSentence()
+{
+  if(softSerial.available())
+    Serial.write(softSerial.read());
+  if(Serial.available())
+    softSerial.write(Serial.read());
+}
+
+void printHeartBeatSignal()
+{
+  while(!(millis() - time))
   {
-    Serial.println("Hello");
+    Serial.println("Heartbeat Signal");
   }
-  
-  time = millis();
-  
-  while( (millis() - time) < SENSOR_INFO_INTERVAL)
+}
+
+void displaySensorInfo()
+{
+  while(!(millis() - time))
   {
-    Serial.println("Heartbeat");
-  } 
+    Serial.println("Display Sensor Info");
+  }
 }
