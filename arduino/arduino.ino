@@ -47,7 +47,7 @@ void loop()
         sendNMAEGPSSentence();
         break;
       case HEARTBEAT_STATUS:
-        printHeartBeatSignal();
+        transmitHeartBeatSignal();
         break;
       case SENSOR_INFO_STATUS:
         displaySensorInfo();
@@ -88,11 +88,33 @@ void sendNMAEGPSSentence()
     softSerial.write(Serial.read());
 }
 
-void printHeartBeatSignal()
+void transmitHeartBeatSignal()
 {
-  while(!(millis() - time))
+  char chars[20];
+  char currentChar;
+  static int i = 0;
+  
+  Serial.println("HeartBeat :");
+  
+  if(Serial.available())
   {
-    Serial.println("Heartbeat Signal");
+      currentChar = Serial.read();
+      chars[i] = currentChar;
+      i++;
+      chars[i] = '\0';
+  }
+  
+  String string(chars);
+  
+  if(string.equals("tick"))
+  {
+    Serial.println("Recieved tick");
+    if(Serial.available())
+    {
+      Serial.println("tock");
+    }
+    i = 0;
+    status++;
   }
 }
 
