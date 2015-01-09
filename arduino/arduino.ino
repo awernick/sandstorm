@@ -27,6 +27,7 @@ static int interval = RAW_NMAE_INTERVAL;
 
 void setup()
 {
+  pinMode(cameraPin, OUTPUT);
   Serial.begin(115200);
   softSerial.begin(GPSBaud);
   
@@ -125,5 +126,6 @@ void displaySensorInfo()
     Serial.println("Display Sensor Info");
     Serial.print("Snapshot...");
     digitalWrite(cameraPin, HIGH);
+    digitalWrite(cameraPin, LOW);
   }
 }
