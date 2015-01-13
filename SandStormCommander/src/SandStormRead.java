@@ -5,18 +5,19 @@
 import gnu.io.*;
 
 import java.io.*;
+import java.util.ArrayList;
 import java.util.Enumeration;
 
 
-public class SandStormRead implements SerialPortEventListener
+public class SandStormRead<T> implements SerialPortEventListener
 {
-    public static final int RAW_NMAE_MODE = 0;
-    public static final int HEARTBEAT_MODE = 1;
-    public static final int SENSOR_INFO_MODE = 2;
+
+    public ArrayList<PropertyChangeListener> listeners;
+    public CommPortIdentifier currentPortID;
 
     public static final int BAUD_RATE = 115200;
     public static final int TIME_OUT = 2000;
-
+    public String inputLine;
     public BufferedReader input;
     public OutputStream output;
     PrintWriter sensorOutput;
@@ -27,56 +28,30 @@ public class SandStormRead implements SerialPortEventListener
 
     SerialPort serialPort;
 
-    private static final String PORT_NAMES[] =
-            {
-                    "/dev/tty.usbmodem1411"
-            };
+    private static final String PORT_NAMES[] = { "/dev/tty.usbmodem1411" };
 
-
-    public static void main(String[] args)
+    public SandStormRead()
     {
-        SandStormRead ssr = new SandStormRead();
-        ssr.initialize();
-
-        new Thread()
-        {
-            public void run(){
-                try {Thread.sleep(1000000);} catch (InterruptedException ie) {}
-            }
-        }.start();
-
-        System.out.println("Started");
+        listeners = new ArrayList<PropertyChangeListener>();
+        currentPortID = null;
     }
 
     public void initialize()
     {
-        CommPortIdentifier portId = null;
-        Enumeration portEnum = CommPortIdentifier.getPortIdentifiers();
-
-        while(portEnum.hasMoreElements())
-        {
-            CommPortIdentifier currentPortID = (CommPortIdentifier) portEnum.nextElement();
-
-            for(String portName : PORT_NAMES) {
-                if (currentPortID.getName().equals(portName)) {
-                    portId = currentPortID;
-                    break;
-                }
-            }
-        }
-
-        if(portId == null)
+        if(currentPortID == null)
         {
             System.out.println("Could not open serial port");
             return;
         }
 
         try {
-            serialPort = (SerialPort) portId.open(this.getClass().getName(), TIME_OUT);
+            serialPort = (SerialPort) currentPortID.open(this.getClass().getName(), TIME_OUT);
 
             serialPort.setSerialPortParams(BAUD_RATE, SerialPort.DATABITS_8, SerialPort.STOPBITS_1, SerialPort.PARITY_NONE);
 
             input = new BufferedReader(new InputStreamReader(serialPort.getInputStream()));
+            inputLine = "";
+
             output = serialPort.getOutputStream();
 
             serialPort.addEventListener(this);
@@ -90,7 +65,7 @@ public class SandStormRead implements SerialPortEventListener
             }
 
         } catch (Exception e) {
-            System.err.println(e.toString());
+            e.printStackTrace();
             System.out.println("Closing..");
         }
     }
@@ -102,47 +77,34 @@ public class SandStormRead implements SerialPortEventListener
         }
     }
 
+    public void addListener(PropertyChangeListener observer)
+    {
+        listeners.add(observer);
+    }
+
+    public void notifyListeners(Object object, String propertyName, String oldValue, String newValue)
+    {
+        for(PropertyChangeListener listener : listeners)
+        {
+            listener.propertyChange(new PropertyChangeListener.PropertyChangeEvent(object, propertyName, oldValue, newValue));
+        }
+    }
+
+
     @Override
     public void serialEvent(SerialPortEvent serialPortEvent)
     {
-
-
         if(serialPortEvent.getEventType() == SerialPortEvent.DATA_AVAILABLE)
         {
-            try {
-                String inputLine = input.readLine();
-
-                if(inputLine.equals("Status: " + SENSOR_INFO_MODE))
-                {
-                    status = SENSOR_INFO_MODE;
-                }
-                else if(inputLine.equals("Status: " + HEARTBEAT_MODE))
-                {
-                    status = HEARTBEAT_MODE;
-                }
-                else if(inputLine.equals("Status: " + RAW_NMAE_MODE))
-                {
-                    status = RAW_NMAE_MODE;
-                }
-
-                switch (status)
-                {
-                    case RAW_NMAE_MODE:
-                        System.out.println(inputLine);
-                        break;
-                    case SENSOR_INFO_MODE:
-                        writeSensorInfo(inputLine);
-                        break;
-                    case HEARTBEAT_MODE:
-                        if(waitingForHeartbeat)
-                            recordHeartBeat(inputLine);
-                        else
-                            pollSandStorm();
-                        break;
-                }
-            } catch (Exception e)
+            try
             {
-                System.err.println(e.toString());
+                String temp = input.readLine();
+                notifyListeners(this, "serial input", temp, inputLine);
+                inputLine = temp;
+            }
+            catch (Exception e)
+            {
+               e.printStackTrace();
             }
         }
         else if(serialPortEvent.getEventType() == SerialPortEvent.OUTPUT_BUFFER_EMPTY)
@@ -180,5 +142,35 @@ public class SandStormRead implements SerialPortEventListener
     public void writeSensorInfo(String sensorInfo)
     {
         sensorOutput.println(sensorInfo);
+    }
+
+
+    public ArrayList<String> getCommPorts()
+    {
+        ArrayList<String> temp = new ArrayList<String>();
+        Enumeration portEnum = CommPortIdentifier.getPortIdentifiers();
+
+        while(portEnum.hasMoreElements()) {
+            CommPortIdentifier currentPortID = (CommPortIdentifier) portEnum.nextElement();
+            temp.add(currentPortID.getName());
+        }
+
+        return temp;
+    }
+
+    public void setCurrentPort(String commPort)
+    {
+        Enumeration portEnum = CommPortIdentifier.getPortIdentifiers();
+
+        while(portEnum.hasMoreElements())
+        {
+            CommPortIdentifier currentPortID = (CommPortIdentifier) portEnum.nextElement();
+
+            if (currentPortID.getName().equals(commPort)) {
+                this.currentPortID = currentPortID;
+                initialize();
+                return;
+            }
+        }
     }
 }

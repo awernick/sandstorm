@@ -1,132 +1,154 @@
-#include <TinyGPS++.h>
+#include <pt.h>   // include protothread library
 #include <SoftwareSerial.h>
-/*
-   This sample sketch demonstrates the normal use of a TinyGPS++ (TinyGPSPlus) object.
-   It requires the use of SoftwareSerial, and assumes that you have a
-   4800-baud serial GPS device hooked up on pins 4(rx) and 3(tx).
-*/
-static const int cameraPin = 13;
 
-static const int RXPin = 4, TXPin = 3;
-static const uint32_t GPSBaud = 9600;
+#define RXPin 52
+#define TXPin 53
+#define SENSOR_INFO_INTERVAL 3000
+#define BAUDRATE 115200
+#define GPS_BAUDRATE 9600
+#define NMEA_SENTENCE_MAX 300
 
-static const uint32_t RAW_NMAE_INTERVAL = 10000;
-static const uint32_t HEARTBEAT_INTERVAL = 5000;
-static const uint32_t SENSOR_INFO_INTERVAL = 10000;
+static struct pt gps, heartbeat, sensors; // each protothread needs one of these
+char nmea_sentence[NMEA_SENTENCE_MAX];
+int counter = 0;
+SoftwareSerial gpsSerial(RXPin, TXPin);
 
-static const uint32_t RAW_NMAE_STATUS = 0;
-static const uint32_t HEARTBEAT_STATUS = 1;
-static const uint32_t SENSOR_INFO_STATUS = 2;
-
-TinyGPSPlus gps;
-SoftwareSerial softSerial(RXPin, TXPin);
-
-static unsigned long  time = 0;
-static int status = RAW_NMAE_STATUS;
-static int interval = RAW_NMAE_INTERVAL; 
-
-void setup()
-{
-  pinMode(cameraPin, OUTPUT);
-  Serial.begin(115200);
-  softSerial.begin(GPSBaud);
+void setup() {
+  Serial.begin(BAUDRATE);
+  Serial1.begin(BAUDRATE);
   
-  Serial.println(F("SandStorm1 initializing ..."));
-  Serial.println();
+  gpsSerial.begin(GPS_BAUDRATE);
+  
+  PT_INIT(&gps);  // initialise the three // protothread variables
+  PT_INIT(&heartbeat);
+  PT_INIT(&sensors);  
 }
 
-void loop()
+PT_THREAD(verifyHeartbeat(struct pt *pt, int interval))
 {
-  
-  time = millis();
-  
-  while( (millis() - time)  <  interval )
-  {
-    switch( status )
-    {
-      case RAW_NMAE_STATUS:
-        sendNMAEGPSSentence();
-        break;
-      case HEARTBEAT_STATUS:
-        transmitHeartBeatSignal();
-        break;
-      case SENSOR_INFO_STATUS:
-        displaySensorInfo();
-        break;
-    }
-  }
-  Serial.println();
-  Serial.print("Running Time: ");
-  Serial.println(time);
-  
-  status++;
-  
-  if(status > SENSOR_INFO_STATUS)
-    status = RAW_NMAE_STATUS;
-    
-   Serial.print("Status: ");
-   Serial.println(status);
-    
-   switch(status)
-   {
-     case RAW_NMAE_STATUS:
-       interval = RAW_NMAE_INTERVAL;
-       break;
-     case HEARTBEAT_STATUS:
-       interval = HEARTBEAT_INTERVAL;
-       break;
-     case SENSOR_INFO_STATUS:
-       interval = SENSOR_INFO_INTERVAL;
-       break;
-   }
-}
-
-void sendNMAEGPSSentence()
-{
-  if(softSerial.available())
-    Serial.write(softSerial.read());
-  if(Serial.available())
-    softSerial.write(Serial.read());
-}
-
-void transmitHeartBeatSignal()
-{
-  char chars[20];
-  char currentChar;
+  static char tick[4];
   static int i = 0;
+  static String message = "";
+  char currentChar;
   
-  Serial.println("HeartBeat :");
+  static unsigned long timestamp = 0;
   
-  if(Serial.available())
+  PT_BEGIN(pt);
+  
+  Serial.println("Heart!");
+  
+  while(1)
   {
+    
+    PT_WAIT_UNTIL(pt, millis() - timestamp > interval);
+    
+    timestamp = millis();
+   
+   if(Serial.available() > 3)
+   {
+        i = 0;
+   }
+   
+   for(int j = 0; j < Serial.available(); j++)
+   {
       currentChar = Serial.read();
-      chars[i] = currentChar;
+      Serial.println(currentChar);
+        
+      if( i > 3 ) { i = 0; }
+      
+      Serial.println(i,DEC);
+      tick[i] = currentChar;
       i++;
-      chars[i] = '\0';
-  }
-  
-  String string(chars);
-  
-  if(string.equals("tick"))
-  {
-    Serial.println("Recieved tick");
-    if(Serial.available())
-    {
-      Serial.println("tock");
+      tick[i] = '\0';
+      message = tick;
     }
-    i = 0;
-    status++;
+    
+    if(message.equals("tick"))
+    {
+      Serial.println("Got tick");
+      Serial.println("tock");
+      message = "";
+      i = 0;
+    }
   }
+  
+  PT_END(pt);
 }
 
-void displaySensorInfo()
-{
-  while(!(millis() - time))
+/* exactly the same as the protothread1 function */
+static int transmitGPS(struct pt *pt, int interval) {
+  static unsigned long timestamp = 0;
+  char byteGPS;
+  
+  PT_BEGIN(pt);
+  
+  while(1) 
   {
-    Serial.println("Display Sensor Info");
-    Serial.print("Snapshot...");
-    digitalWrite(cameraPin, HIGH);
-    delay(1000);
-    digitalWrite(cameraPin, LOW);
+    
+    while(1) {
+      PT_WAIT_UNTIL(pt, millis() - timestamp > interval);
+       timestamp = millis();
+       
+      if (gpsSerial.available())
+      {
+         byteGPS = gpsSerial.read();
+         handle_byte(byteGPS);
+      }
+         
+//      if (Serial.available())
+//        gpsSerial.write(Serial.read());
+        
+      //Serial.println("GPS");
+    }
   }
+  
+  PT_END(pt);
+}
+
+int handle_byte(int byteGPS)
+{
+  if(byteGPS == '$')
+  {
+    Serial.println(nmea_sentence);
+    counter = 0;
+  }
+  
+  if(counter == 300)
+    counter = 0;
+  
+  nmea_sentence[counter] = byteGPS;
+  counter++;
+}
+
+
+PT_THREAD(updateSensorInfo(struct pt *pt, int interval)) {
+  static unsigned long timestamp = 0;
+  struct pt heartbeat;
+  
+  PT_BEGIN(pt);
+  
+  while(1) 
+  {
+    
+    PT_WAIT_UNTIL(pt, millis() - timestamp > interval);
+    
+    Serial.println("Starting");
+    
+    timestamp = millis();
+    
+    Serial.println("UPDATE SENSOR");
+ 
+    Serial.print("timestamp: ");
+    Serial.println(timestamp);
+  
+  }
+  
+  PT_END(pt);
+}
+
+void loop() 
+{
+  transmitGPS(&gps, 5); // by calling them infinitely
+  updateSensorInfo(&sensors, 3000);
+  verifyHeartbeat(&heartbeat, 1000);
 }
