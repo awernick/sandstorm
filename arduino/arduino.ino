@@ -65,7 +65,6 @@ PT_THREAD(verifyHeartbeat(struct pt *pt, int interval))
     
     if(message.equals("tick"))
     {
-      Serial.println("Got tick");
       Serial.println("tock");
       message = "";
       i = 0;
