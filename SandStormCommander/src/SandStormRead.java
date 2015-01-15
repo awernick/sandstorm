@@ -5,6 +5,7 @@
 import gnu.io.*;
 
 import java.io.*;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Timer;
@@ -13,18 +14,18 @@ import java.util.TimerTask;
 
 public class SandStormRead<T> implements SerialPortEventListener
 {
-    public static final int BAUD_RATE = 115200;  //Arduino Serial Baud Rate
+    public static final int BAUD_RATE = 9600; //115200;  //Arduino Serial Baud Rate
     public static final int TIME_OUT = 2000;  //Serial Timeout
 
     public SerialPort serialPort;
     public CommPortIdentifier currentPortID;
 
     public ArrayList<PropertyChangeListener> listeners; //Listeners waiting for events
-    public BufferedReader input; //Arduino Serial input
+    public InputStreamReader input; //Arduino Serial input
     public OutputStream output; //Arduino Serial output
     public PrintWriter sensorOutput; //CSV sensor info writer
 
-    public String inputLine;
+    public byte[] inputLine;
 
     public static boolean waitingForHeartbeat = false;
     public long lastHeartBeat = 0;
@@ -35,7 +36,7 @@ public class SandStormRead<T> implements SerialPortEventListener
     {
         listeners = new ArrayList<PropertyChangeListener>();
         currentPortID = null;
-        inputLine = new String();
+        inputLine = new byte[4096];
     }
 
     public void initialize()
@@ -50,10 +51,11 @@ public class SandStormRead<T> implements SerialPortEventListener
         {
             serialPort = (SerialPort) currentPortID.open(this.getClass().getName(), TIME_OUT);
 
+            //Open serial input stream
+            input = new InputStreamReader(serialPort.getInputStream());
             serialPort.setSerialPortParams(BAUD_RATE, SerialPort.DATABITS_8, SerialPort.STOPBITS_1, SerialPort.PARITY_NONE);
 
-            //Open serial input stream
-            input = new BufferedReader(new InputStreamReader(serialPort.getInputStream()));
+            //input = new InputStreamReader(serialPort.getInputStream());
 
             //Establish serial output stream to Arduino
             output = serialPort.getOutputStream();
@@ -62,14 +64,14 @@ public class SandStormRead<T> implements SerialPortEventListener
             serialPort.addEventListener(this);
             serialPort.notifyOnDataAvailable(true);
 
-            Timer timer = new Timer();
-            TimerTask task = new TimerTask() {
-                @Override
-                public void run() {
-                    pollSandStorm();
-                }
-            };
-            timer.schedule(task, 0, 10000);
+//            Timer timer = new Timer();
+//            TimerTask task = new TimerTask() {
+//                @Override
+//                public void run() {
+//                    pollSandStorm();
+//                }
+//            };
+//            timer.schedule(task, 0, 10000);
 
             //Open CSV file
             try { sensorOutput = new PrintWriter(new BufferedWriter(new FileWriter("myfile.txt", true))); }
@@ -189,17 +191,51 @@ public class SandStormRead<T> implements SerialPortEventListener
         {
             try
             {
-                String temp = input.readLine();
-                notifyListeners(this, "serial input", inputLine, temp);
-                inputLine = temp;
+                byte[] oldValue = inputLine;
 
-                if(inputLine.equals("tock"))
+                int n = 0;
+
+                char inputTemp[] = new char[4096];
+
+                while(input.ready())
+                {
+                    int t = input.read(inputTemp);
+                    System.out.print(t+ ",");
+                    inputLine[n] = (byte) t;
+                }
+
+                System.out.println(inputTemp);
+
+                //inputLine = input.readLine().getBytes();
+
+                for(byte b : inputLine)
+                {
+                    System.out.print((int)b + ",");
+                }
+
+                System.out.println();
+
+                if(new String(inputLine).equals(":hello.jpg end"))
+                {
+                    System.out.println("Ending JPEG");
+                    notifyListeners(this, "end jpeg", "end", "end");
+                }
+
+                if(new String(inputLine).equals("tock"))
                 {
                     long tempMillis = System.currentTimeMillis();
                     System.out.println("tock detected!");
                     notifyListeners(this, "tock event", new Long(lastHeartBeat), tempMillis);
                     recordHeartBeat(tempMillis);
                 }
+
+                if(new String(inputLine).equals("hello.jpeg:"))
+                {
+                    System.out.println("Building JPEG");
+                    notifyListeners(this, "start jpeg", "hello", "hello");
+                }
+
+                notifyListeners(this, "serial input", oldValue, inputLine);
             }
 
             catch (Exception e)

@@ -1,7 +1,12 @@
 import javax.swing.*;
+import javax.swing.border.TitledBorder;
 import javax.swing.text.DefaultCaret;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -35,6 +40,9 @@ public class SandStormInit extends JFrame implements PropertyChangeListener
     private JComboBox commPortComboBox;
     private JComboBox baudRateComboBox;
     private ArrayList<String> commPortsList;
+
+    private boolean buildingJPEG;
+    private OutputStream jpegOutputStream;
 
 
     public static void main(String [] args)
@@ -122,9 +130,9 @@ public class SandStormInit extends JFrame implements PropertyChangeListener
         serialInfoPanel.add(serialOutputScrollPane, BorderLayout.CENTER);
 
         //Sensor Info Panel (GPS, Heartbeat, Temp, etc...)
-        sensorInfoPanel = new JPanel();
-        GroupLayout groupLayout = new GroupLayout(sensorInfoPanel);
-        sensorInfoPanel.setLayout(groupLayout);
+        JPanel temp = new JPanel();
+        GroupLayout groupLayout = new GroupLayout(temp);
+        temp.setLayout(groupLayout);
         groupLayout.setAutoCreateGaps(true);
         groupLayout.setAutoCreateContainerGaps(true);
         groupLayout.setVerticalGroup(
@@ -151,6 +159,14 @@ public class SandStormInit extends JFrame implements PropertyChangeListener
                                 .addComponent(gpsTimeLabel)
                                 .addComponent(altitudeLabel)
                                 .addComponent(humidityLabel)));
+
+        TitledBorder title;
+        title = BorderFactory.createTitledBorder("Info");
+        sensorInfoPanel = new JPanel();
+        sensorInfoPanel.setLayout(new BorderLayout());
+        sensorInfoPanel.add(temp , BorderLayout.CENTER);
+        sensorInfoPanel.setBorder(title);
+
         //Map Panel
         mapPanel = new JPanel();
 
@@ -186,15 +202,66 @@ public class SandStormInit extends JFrame implements PropertyChangeListener
     @Override
     public void propertyChange(PropertyChangeEvent changeEvent)
     {
-        if(changeEvent.getPropertyName().equals("serial input"))
-        {
-            serialOutput.append((String) changeEvent.getNewValue() + "\n");
-        }
 
         if(changeEvent.getPropertyName().equals("tock event"))
         {
             lastHeartBeatLabel.setText("Last Heartbeat: " + formatTime((Long) changeEvent.getNewValue()));
             lastHeartBeatLabel.setHorizontalAlignment(SwingConstants.LEFT);
+        }
+
+        if(changeEvent.getPropertyName().equals("start jpeg"))
+        {
+            try
+            {
+                File yourFile = new File("hello.txt");
+
+                if(!yourFile.exists())
+                    yourFile.createNewFile();
+
+                jpegOutputStream = new FileOutputStream(yourFile);
+
+                buildingJPEG = true;
+            }
+            catch (IOException e)
+            {
+                System.err.println(e.toString());
+            }
+        }
+
+        if(changeEvent.getPropertyName().equals("end jpeg"))
+        {
+            try
+            {
+                if(buildingJPEG)
+                {
+                    jpegOutputStream.flush();
+                    jpegOutputStream.close();
+                }
+
+                jpegOutputStream = null;
+                buildingJPEG = false;
+            }
+            catch (IOException e)
+            {
+                System.err.println(e.toString());
+            }
+        }
+
+        if(changeEvent.getPropertyName().equals("serial input"))
+        {
+            serialOutput.append(new String((byte[])changeEvent.getNewValue()) + "\n");
+
+            if(buildingJPEG)
+            {
+                try {
+                    jpegOutputStream.write((byte[])changeEvent.getNewValue());
+                }
+                catch (IOException e)
+                {
+                    System.err.print(e.toString());
+                    buildingJPEG = false;
+                }
+            }
         }
     }
 
